@@ -1,0 +1,94 @@
+version: '3.9'
+
+services:
+  # Main database
+  postgres:
+    image: postgres:alpine
+    container_name: postgres
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init.sh:/docker-entrypoint-initdb.d/init.sh
+    ports:
+      - ${POSTGRES_PORT}:${POSTGRES_PORT}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -d ${POSTGRES_DB} -U ${POSTGRES_USER}"
+        ]
+      interval: 1s
+      timeout: 5s
+      retries: 10
+
+  # Cache/session database
+  redis:
+    image: redis:alpine
+    container_name: redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    env_file:
+      - .env
+    volumes:
+      - redis-data:/data
+    ports:
+      - ${REDIS_PORT}:${REDIS_PORT}
+    healthcheck:
+      test: redis-cli ping
+      interval: 1s
+      timeout: 5s
+      retries: 10
+
+  # Web server
+  web:
+    build:
+      context: ./web
+      dockerfile: web.Dockerfile
+      target: production
+    container_name: web
+    restart: unless-stopped
+    env_file:
+      - ./web/.env
+    ports:
+      - ${WEB_PORT}:${WEB_PORT}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--spider",
+          "-q",
+          "http://localhost:${WEB_PORT}/healthcheck"
+        ]
+      interval: 1s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      web-migration:
+        condition: service_completed_successfully
+
+  # Database migration for web service
+  web-migration:
+    build:
+      context: ./web
+      dockerfile: migration.Dockerfile
+      target: migration
+    container_name: web-migration
+    restart: on-failure
+    env_file:
+      - ./web/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
