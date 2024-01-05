@@ -1,4 +1,4 @@
-version: '3.9'
+version: '3.8'
 
 services:
   # Main database
@@ -46,25 +46,25 @@ services:
     build:
       context: ./web
       dockerfile: web.Dockerfile
-      target: production
+      target: ${TARGET}
     container_name: web
     restart: unless-stopped
     env_file:
+      - .env
       - ./web/.env
     ports:
       - ${WEB_PORT}:${WEB_PORT}
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--spider",
-          "-q",
-          "http://localhost:${WEB_PORT}/healthcheck"
-        ]
-      interval: 1s
-      timeout: 5s
-      retries: 10
+    develop:
+      watch:
+        - path: ./web/package.json
+          action: rebuild
+        - path: ./web/package-lock.json
+          action: rebuild
+        - path: ./web/svelte.config.js
+          action: rebuild
+        - path: ./web
+          target: /app
+          action: sync
     depends_on:
       postgres:
         condition: service_healthy
